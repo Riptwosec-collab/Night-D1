@@ -9,7 +9,9 @@
     html,body{margin:0;min-height:100%;background:#020817;color:#f5f9ff;font-family:Tahoma,sans-serif}
     .boot{min-height:100vh;display:grid;place-items:center;text-align:center;padding:24px}
     .ring{width:52px;height:52px;margin:auto;border:3px solid #073b72;border-top-color:#00e5ff;border-radius:50%;animation:spin .8s linear infinite}
-    .msg{margin-top:16px;color:#9fc8ee;max-width:620px}
+    .msg{margin:16px auto 0;color:#9fc8ee;max-width:680px;line-height:1.65}
+    .retry{display:none;margin:18px auto 0;min-height:44px;padding:9px 18px;border:1px solid #00b7ff;border-radius:10px;background:#06234a;color:#fff;font:700 15px Tahoma,sans-serif;cursor:pointer}
+    .retry:hover{background:#0a3974;box-shadow:0 0 20px rgba(0,183,255,.25)}
     @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
@@ -18,63 +20,85 @@
     <div>
       <div class="ring" aria-hidden="true"></div>
       <p class="msg" id="status">กำลังเปิด Night Shift NOC Dashboard…</p>
+      <button class="retry" id="retry" type="button">ลองเปิดอีกครั้ง</button>
     </div>
   </main>
   <script>
-    (async()=>{
+    (()=>{
       const status=document.getElementById('status');
-      try{
-        if(!('DecompressionStream' in window)) throw new Error('เบราว์เซอร์ไม่รองรับ DecompressionStream');
-        const remoteBase='https://raw.githubusercontent.com/Riptwosec-collab/Night-D1/main/';
-        const base=location.protocol==='file:'?remoteBase:'';
-        const files=Array.from({length:7},(_,i)=>`build-parts/part-${String(i).padStart(2,'0')}.txt`);
-        const parts=await Promise.all(files.map(async file=>{
-          const response=await fetch(base+file,{cache:'no-store'});
-          if(!response.ok) throw new Error(`โหลด ${file} ไม่สำเร็จ`);
-          return response.text();
-        }));
-        const encoded=parts.join('').replace(/\s/g,'');
+      const retry=document.getElementById('retry');
+      const partNames=Array.from({length:7},(_,i)=>`part-${String(i).padStart(2,'0')}.txt`);
+      const remoteSources=[
+        'https://cdn.jsdelivr.net/gh/Riptwosec-collab/Night-D1@main/build-parts/',
+        'https://raw.githubusercontent.com/Riptwosec-collab/Night-D1/main/build-parts/'
+      ];
+
+      function getSources(){
+        const sources=[];
+        if(location.protocol!=='file:') sources.push(new URL('build-parts/',location.href).href);
+        return [...new Set([...sources,...remoteSources])];
+      }
+
+      async function fetchEncoded(base){
+        status.textContent='กำลังโหลดข้อมูล Dashboard…';
+        const responses=await Promise.all(partNames.map(name=>fetch(base+name,{cache:'no-store'})));
+        const failed=responses.findIndex(response=>!response.ok);
+        if(failed!==-1) throw new Error(`${partNames[failed]} HTTP ${responses[failed].status}`);
+        return (await Promise.all(responses.map(response=>response.text()))).join('').replace(/\s/g,'');
+      }
+
+      function decodeBase64(encoded){
         const binary=atob(encoded);
         const bytes=new Uint8Array(binary.length);
         for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
-        const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-        let html=await new Response(stream).text();
-        const todoDeletePatch=String.raw`<script>
-          STORAGE.todoDeleted='nightShiftV9:todoDeleted';
-          function deletedTodoIds(){return new Set(readStorage(STORAGE.todoDeleted,[]))}
-          function allTodoItems(){const deleted=deletedTodoIds();return [...DEFAULT_TODO.filter(item=>!deleted.has(item.id)),...readStorage(STORAGE.customTodo,[])]}
-          function renderTodoList(){
-            const container=$('#todoList');if(!container)return;container.replaceChildren();
-            const customIds=new Set(readStorage(STORAGE.customTodo,[]).map(item=>item.id));
-            const items=allTodoItems();
-            if(!items.length){const empty=create('section',{class:'panel'});const body=create('div',{class:'panel-body'});body.append(create('h3',{},'ยังไม่มีรายการสิ่งที่ต้องทำ'),create('p',{class:'muted'},'เพิ่มรายการใหม่ได้จากแบบฟอร์มด้านขวา'));empty.append(body);container.append(empty);updateTodoProgress();return}
-            items.forEach((item,index)=>{
-              const isCustom=customIds.has(item.id);
-              const article=create('article',{class:'card todo-item v6-todo has-action',dataset:{todoId:item.id}});
-              article.append(create('div',{class:'todo-state'},String(index+1)));
-              const content=create('div');content.append(create('h3',{},item.title),create('p',{},item.detail||'ไม่มีรายละเอียด'));article.append(content);
-              const actions=create('div',{class:'todo-actions'});
-              const remove=create('button',{type:'button',class:'btn danger','aria-label':'ลบรายการ '+item.title},'ลบ');
-              remove.addEventListener('click',()=>confirmAction('ลบรายการงาน','ต้องการลบ “'+item.title+'” หรือไม่',()=>deleteTodoItem(item.id,isCustom)));
-              actions.append(remove);article.append(actions);container.append(article);
-            });
-            updateTodoProgress();
-          }
-          function deleteTodoItem(id,isCustom){
-            if(isCustom){writeStorage(STORAGE.customTodo,readStorage(STORAGE.customTodo,[]).filter(item=>item.id!==id))}
-            else{const deleted=deletedTodoIds();deleted.add(id);writeStorage(STORAGE.todoDeleted,[...deleted])}
-            renderTodoList();updateAllProgress();showToast('ลบรายการงานแล้ว','success');
-          }
-          if(document.querySelector('#todoList'))renderTodoList();
-        <\/script>`;
-        html=html.replace('</body>',todoDeletePatch+'</body>');
-        document.open();
-        document.write(html);
-        document.close();
-      }catch(error){
-        console.error(error);
-        status.textContent='เปิด Dashboard ไม่สำเร็จ กรุณาใช้ Chrome หรือ Edge เวอร์ชันล่าสุด และตรวจสอบการเชื่อมต่ออินเทอร์เน็ต';
+        return bytes;
       }
+
+      async function loadPako(){
+        if(window.pako) return;
+        await new Promise((resolve,reject)=>{
+          const script=document.createElement('script');
+          script.src='https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js';
+          script.onload=resolve;
+          script.onerror=()=>reject(new Error('โหลดตัวช่วยแตกไฟล์ไม่สำเร็จ'));
+          document.head.append(script);
+        });
+      }
+
+      async function decompress(bytes){
+        if('DecompressionStream' in window){
+          const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+          return new Response(stream).text();
+        }
+        await loadPako();
+        return new TextDecoder().decode(window.pako.ungzip(bytes));
+      }
+
+      async function boot(){
+        retry.style.display='none';
+        const errors=[];
+        for(const source of getSources()){
+          try{
+            const encoded=await fetchEncoded(source);
+            if(!encoded.startsWith('H4sI')) throw new Error('รูปแบบข้อมูลไม่ถูกต้อง');
+            const html=await decompress(decodeBase64(encoded));
+            if(!html.includes('<html')||!html.includes('Night Shift')) throw new Error('ไฟล์ Dashboard ไม่สมบูรณ์');
+            document.open();
+            document.write(html);
+            document.close();
+            return;
+          }catch(error){
+            console.warn('Dashboard source failed:',source,error);
+            errors.push(error.message);
+          }
+        }
+        status.textContent='เปิด Dashboard ไม่สำเร็จ กรุณากด Ctrl + F5 แล้วลองใหม่ หรือตรวจสอบการเชื่อมต่ออินเทอร์เน็ต';
+        retry.style.display='inline-block';
+        console.error('Night Shift boot failed:',errors);
+      }
+
+      retry.addEventListener('click',boot);
+      boot();
     })();
   </script>
 </body>
