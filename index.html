@@ -38,7 +38,36 @@
         const bytes=new Uint8Array(binary.length);
         for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
         const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-        const html=await new Response(stream).text();
+        let html=await new Response(stream).text();
+        const todoDeletePatch=String.raw`<script>
+          STORAGE.todoDeleted='nightShiftV9:todoDeleted';
+          function deletedTodoIds(){return new Set(readStorage(STORAGE.todoDeleted,[]))}
+          function allTodoItems(){const deleted=deletedTodoIds();return [...DEFAULT_TODO.filter(item=>!deleted.has(item.id)),...readStorage(STORAGE.customTodo,[])]}
+          function renderTodoList(){
+            const container=$('#todoList');if(!container)return;container.replaceChildren();
+            const customIds=new Set(readStorage(STORAGE.customTodo,[]).map(item=>item.id));
+            const items=allTodoItems();
+            if(!items.length){const empty=create('section',{class:'panel'});const body=create('div',{class:'panel-body'});body.append(create('h3',{},'ยังไม่มีรายการสิ่งที่ต้องทำ'),create('p',{class:'muted'},'เพิ่มรายการใหม่ได้จากแบบฟอร์มด้านขวา'));empty.append(body);container.append(empty);updateTodoProgress();return}
+            items.forEach((item,index)=>{
+              const isCustom=customIds.has(item.id);
+              const article=create('article',{class:'card todo-item v6-todo has-action',dataset:{todoId:item.id}});
+              article.append(create('div',{class:'todo-state'},String(index+1)));
+              const content=create('div');content.append(create('h3',{},item.title),create('p',{},item.detail||'ไม่มีรายละเอียด'));article.append(content);
+              const actions=create('div',{class:'todo-actions'});
+              const remove=create('button',{type:'button',class:'btn danger','aria-label':'ลบรายการ '+item.title},'ลบ');
+              remove.addEventListener('click',()=>confirmAction('ลบรายการงาน','ต้องการลบ “'+item.title+'” หรือไม่',()=>deleteTodoItem(item.id,isCustom)));
+              actions.append(remove);article.append(actions);container.append(article);
+            });
+            updateTodoProgress();
+          }
+          function deleteTodoItem(id,isCustom){
+            if(isCustom){writeStorage(STORAGE.customTodo,readStorage(STORAGE.customTodo,[]).filter(item=>item.id!==id))}
+            else{const deleted=deletedTodoIds();deleted.add(id);writeStorage(STORAGE.todoDeleted,[...deleted])}
+            renderTodoList();updateAllProgress();showToast('ลบรายการงานแล้ว','success');
+          }
+          if(document.querySelector('#todoList'))renderTodoList();
+        <\/script>`;
+        html=html.replace('</body>',todoDeletePatch+'</body>');
         document.open();
         document.write(html);
         document.close();
