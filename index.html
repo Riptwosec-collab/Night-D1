@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#020817">
+  <title>Night Shift – NOC Operations Dashboard</title>
+  <style>
+    html,body{margin:0;min-height:100%;background:#020817;color:#f5f9ff;font-family:Tahoma,sans-serif}
+    .boot{min-height:100vh;display:grid;place-items:center;text-align:center;padding:24px}
+    .ring{width:52px;height:52px;margin:auto;border:3px solid #073b72;border-top-color:#00e5ff;border-radius:50%;animation:spin .8s linear infinite}
+    .msg{margin-top:16px;color:#9fc8ee}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <main class="boot" aria-live="polite">
+    <div>
+      <div class="ring" aria-hidden="true"></div>
+      <p class="msg" id="status">กำลังเปิด Night Shift NOC Dashboard…</p>
+    </div>
+  </main>
+  <script>
+    (async()=>{
+      const status=document.getElementById('status');
+      try{
+        if(!('DecompressionStream' in window)) throw new Error('เบราว์เซอร์ไม่รองรับ DecompressionStream');
+        const files=Array.from({length:7},(_,i)=>`build-parts/part-${String(i).padStart(2,'0')}.txt`);
+        const parts=await Promise.all(files.map(async file=>{
+          const response=await fetch(file,{cache:'no-store'});
+          if(!response.ok) throw new Error(`โหลด ${file} ไม่สำเร็จ`);
+          return response.text();
+        }));
+        const encoded=parts.join('').replace(/\s/g,'');
+        const binary=atob(encoded);
+        const bytes=new Uint8Array(binary.length);
+        for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+        const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+        const html=await new Response(stream).text();
+        document.open();
+        document.write(html);
+        document.close();
+      }catch(error){
+        console.error(error);
+        status.textContent='เปิด Dashboard ไม่สำเร็จ กรุณาเปิดผ่าน GitHub Pages หรือ Web Server ด้วย Chrome/Edge เวอร์ชันล่าสุด';
+      }
+    })();
+  </script>
+</body>
+</html>
