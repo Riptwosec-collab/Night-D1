@@ -21,11 +21,104 @@ const encoded = partFiles
   .join('')
   .replace(/\s/g, '');
 
-const html = zlib.gunzipSync(Buffer.from(encoded, 'base64')).toString('utf8');
+let html = zlib.gunzipSync(Buffer.from(encoded, 'base64')).toString('utf8');
 
 if (!html.includes('<!doctype html>') || !html.includes('Night Shift')) {
   throw new Error('Rebuilt dashboard is incomplete');
 }
+
+const todoDeletePatch = String.raw`<script>
+(()=>{
+  'use strict';
+  const TODO_DELETE_KEY = 'nightShiftV9:todoDeleted';
+
+  function deletedTodoIds(){
+    return new Set(readStorage(TODO_DELETE_KEY, []));
+  }
+
+  function saveDeletedTodoIds(ids){
+    writeStorage(TODO_DELETE_KEY, Array.from(ids));
+  }
+
+  allTodoItems = function(){
+    const deleted = deletedTodoIds();
+    const defaults = DEFAULT_TODO.filter((item) => !deleted.has(item.id));
+    const custom = readStorage(STORAGE.customTodo, []);
+    return defaults.concat(custom);
+  };
+
+  deleteTodoItem = function(id){
+    const custom = readStorage(STORAGE.customTodo, []);
+    const isCustom = custom.some((item) => item.id === id);
+
+    if (isCustom) {
+      writeStorage(STORAGE.customTodo, custom.filter((item) => item.id !== id));
+    } else {
+      const deleted = deletedTodoIds();
+      deleted.add(id);
+      saveDeletedTodoIds(deleted);
+    }
+
+    renderTodoList();
+    updateAllProgress();
+    showToast('ลบรายการงานแล้ว', 'success');
+  };
+
+  renderTodoList = function(){
+    const list = document.querySelector('#todoList');
+    if (!list) return;
+
+    list.replaceChildren();
+    const items = allTodoItems();
+
+    if (!items.length) {
+      const empty = create('article', { class: 'card todo-item v6-todo' });
+      const text = create('div');
+      text.append(
+        create('h3', {}, 'ยังไม่มีรายการสิ่งที่ต้องทำ'),
+        create('p', {}, 'เพิ่มรายการใหม่จากแบบฟอร์มด้านขวา')
+      );
+      empty.append(create('div', { class: 'todo-state' }, '0'), text);
+      list.append(empty);
+      updateTodoProgress();
+      return;
+    }
+
+    items.forEach((item, index) => {
+      const row = create('article', {
+        class: 'card todo-item v6-todo has-action',
+        dataset: { todoId: item.id }
+      });
+
+      row.append(create('div', { class: 'todo-state' }, String(index + 1)));
+
+      const copy = create('div');
+      copy.append(
+        create('h3', {}, item.title),
+        create('p', {}, item.detail || 'ไม่มีรายละเอียด')
+      );
+      row.append(copy);
+
+      const actions = create('div', { class: 'todo-actions' });
+      const remove = create('button', { type: 'button', class: 'btn danger' }, 'ลบ');
+      remove.addEventListener('click', () => {
+        confirmAction(
+          'ลบรายการงาน',
+          'ต้องการลบ “' + item.title + '” หรือไม่',
+          () => deleteTodoItem(item.id)
+        );
+      });
+      actions.append(remove);
+      row.append(actions);
+      list.append(row);
+    });
+
+    updateTodoProgress();
+  };
+})();
+</script>`;
+
+html = html.replace('</body>', todoDeletePatch + '</body>');
 
 fs.mkdirSync(outputDir, { recursive: true });
 fs.writeFileSync(outputFile, html, 'utf8');
