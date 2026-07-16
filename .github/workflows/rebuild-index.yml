@@ -1,0 +1,40 @@
+name: Rebuild single-file dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'build-parts/**'
+      - '.github/workflows/rebuild-index.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Rebuild standalone index.html
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat build-parts/part-*.txt | tr -d '\n\r' | base64 --decode | gzip --decompress > index.html
+          echo 'e0bf2fd0c26d86da60bbe517b9360cf4ef438a2b3ca89546bf7820a29517dbb2  index.html' | sha256sum --check
+
+      - name: Commit rebuilt dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          if git diff --cached --quiet; then
+            echo 'index.html is already current'
+            exit 0
+          fi
+          git commit -m 'Fix dashboard: deploy standalone index.html [skip ci]'
+          git push
