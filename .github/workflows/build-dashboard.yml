@@ -1,0 +1,36 @@
+name: Build Night Shift Dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'build-parts/**'
+      - '.github/workflows/build-dashboard.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Rebuild index.html
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat build-parts/part-*.txt | tr -d '\n\r' | base64 --decode | gzip --decompress > index.html
+          echo "70512bb89dbc7e20cfe6f903a7d080a8b922a0ac1dbf6be1e5f7dc4daed3f355  index.html" | sha256sum --check
+
+      - name: Commit dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git rm -r build-parts .github/workflows/build-dashboard.yml
+          git commit -m "Deploy Night Shift NOC Dashboard [skip ci]"
+          git push
