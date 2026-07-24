@@ -201,7 +201,7 @@ def resolve_widget_container(driver: webdriver.Chrome, heading: WebElement) -> W
         viewport_width = 0
         viewport_height = 0
 
-    candidates: list[tuple[int, int, WebElement]] = []
+    candidates: list[dict[str, Any]] = []
     current = heading
 
     for depth in range(1, 10):
@@ -221,32 +221,48 @@ def resolve_widget_container(driver: webdriver.Chrome, heading: WebElement) -> W
                 f"{current.get_attribute('id') or ''} "
                 f"{current.get_attribute('class') or ''}"
             ).lower()
-            text = compact_text(current.text.lower(), 1200)
-            chart_count = count_visible_charts(current)
+            is_named_panel = any(
+                token in descriptor
+                for token in ("widget", "resource", "panel", "card", "chart", "view")
+            )
+            is_page_sized = (
+                bool(viewport_width and width >= viewport_width * 0.92)
+                or bool(viewport_height and height >= viewport_height * 0.90)
+            )
 
-            score = 0
-            if any(token in descriptor for token in ("widget", "resource", "panel", "card", "chart", "view")):
-                score += 6
-            if chart_count:
-                score += 8
-            if "ingress" in text or "last 12 hours" in text:
-                score += 3
-            if 220 <= width <= 1200 and 140 <= height <= 900:
-                score += 2
-            if viewport_width and width >= viewport_width * 0.92:
-                score -= 4
-            if viewport_height and height >= viewport_height * 0.85:
-                score -= 4
-
-            candidates.append((score, -depth, current))
+            candidates.append(
+                {
+                    "element": current,
+                    "depth": depth,
+                    "area": width * height,
+                    "is_named_panel": is_named_panel,
+                    "is_page_sized": is_page_sized,
+                }
+            )
         except (NoSuchElementException, StaleElementReferenceException, WebDriverException):
             break
 
     if not candidates:
         return heading
 
-    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    return candidates[0][2]
+    named_panels = [
+        candidate
+        for candidate in candidates
+        if candidate["is_named_panel"] and not candidate["is_page_sized"]
+    ]
+    if named_panels:
+        named_panels.sort(key=lambda item: (item["area"], item["depth"]))
+        return named_panels[0]["element"]
+
+    local_candidates = [
+        candidate for candidate in candidates if not candidate["is_page_sized"]
+    ]
+    if local_candidates:
+        local_candidates.sort(key=lambda item: (item["area"], item["depth"]))
+        return local_candidates[0]["element"]
+
+    candidates.sort(key=lambda item: item["depth"])
+    return candidates[0]["element"]
 
 
 def inspect_widget(driver: webdriver.Chrome, widget_name: str) -> dict[str, Any]:
