@@ -31,7 +31,7 @@ const dailyReportPathPatch = String.raw`<script>
 (()=>{
   'use strict';
 
-  const DAILY_REPORT_PATH = String.raw\`\\\\10.1.1.94\\share noc\\รายงานประจำวัน\`;
+  const DAILY_REPORT_PATH = '\\\\10.1.1.94\\share noc\\รายงานประจำวัน';
   const DAILY_REPORT_PATH_PATTERN = /\\{1,2}10\\.1\\.1\\.94\\?share noc\\?รายงานประจำวัน/g;
 
   function normalizeDailyReportPath(value){
